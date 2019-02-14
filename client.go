@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io/ioutil"
 	"net/http"
 	"net/url"
 	"path"
@@ -95,7 +96,13 @@ func (c *Client) call(ctx context.Context, method string, apiEndpoint string, pa
 	if res == nil {
 		return nil
 	}
-	return json.NewDecoder(response.Body).Decode(&res)
+
+	data, err := ioutil.ReadAll(response.Body)
+	if err != nil {
+		return err
+	}
+
+	return json.Unmarshal(data, &res)
 }
 
 type requestParams map[string]interface{}
