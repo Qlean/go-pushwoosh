@@ -6,11 +6,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"net/url"
 	"path"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 const (
@@ -24,6 +27,7 @@ var (
 
 // Config is a setting for Pushwoosh Remote APIs.
 type Config struct {
+	Logger          *zap.Logger
 	Endpoint        string
 	ApplicationCode string
 	AccessToken     string
@@ -46,6 +50,7 @@ type ResponseMessages struct {
 type Client struct {
 	httpClient *http.Client
 	config     *Config
+	logger     *zap.Logger
 }
 
 // NewClient returns a new pushwoosh API client.
@@ -57,9 +62,18 @@ func NewClient(config *Config) (*Client, error) {
 		return nil, errors.New("config is nil")
 	}
 
+	var logger *zap.Logger
+
+	if config.Logger == nil {
+		logger = zap.NewNop()
+	} else {
+		logger = config.Logger
+	}
+
 	return &Client{
 		httpClient: httpClient,
 		config:     config,
+		logger:     logger,
 	}, nil
 }
 
@@ -87,6 +101,11 @@ func (c *Client) call(ctx context.Context, method string, apiEndpoint string, pa
 	req.Header.Set("Content-Type", "application/json")
 	req = req.WithContext(ctx)
 
+	c.logger.Debug("poshwoosh API request",
+		zap.String("method", req.Method),
+		zap.String("path", u.Path),
+		zap.String("body", string(jsonParams)))
+
 	response, err := c.httpClient.Do(req)
 	if err != nil {
 		return err
@@ -96,11 +115,19 @@ func (c *Client) call(ctx context.Context, method string, apiEndpoint string, pa
 	if res == nil {
 		return nil
 	}
+	if response.StatusCode != http.StatusOK {
+		return fmt.Errorf("pushwoosh %s %s responses wish HTTP status %s", req.Method, u.Path, response.Status)
+	}
 
 	data, err := ioutil.ReadAll(response.Body)
 	if err != nil {
 		return err
 	}
+
+	c.logger.Debug("poshwoosh API response",
+		zap.String("method", req.Method),
+		zap.String("path", u.Path),
+		zap.String("body", string(data)))
 
 	return json.Unmarshal(data, &res)
 }
